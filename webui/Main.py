@@ -183,7 +183,8 @@ if not config.app.get("hide_config", False):
             #   qwen (通义千问)
             #   gemini
             #   ollama
-            llm_providers = ['OpenAI', 'Moonshot', 'Azure', 'Qwen', 'Gemini', 'Ollama', 'G4f', 'OneAPI', "Cloudflare"]
+            llm_providers = ['OpenAI', 'Moonshot', 'Azure', 'Qwen', 'DeepSeek', 'Gemini', 'Ollama', 'G4f', 'OneAPI',
+                             "Cloudflare"]
             saved_llm_provider = config.app.get("llm_provider", "OpenAI").lower()
             saved_llm_provider_index = 0
             for i, provider in enumerate(llm_providers):
@@ -284,6 +285,19 @@ if not config.app.get("hide_config", False):
                            - **API Key**: [点击到官网申请](https://ai.google.dev/)
                            - **Base Url**: 留空
                            - **Model Name**: 比如 gemini-1.0-pro
+                           """
+
+            if llm_provider == 'deepseek':
+                if not llm_model_name:
+                    llm_model_name = "deepseek-chat"
+                if not llm_base_url:
+                    llm_base_url = "https://api.deepseek.com"
+                with llm_helper:
+                    tips = """
+                           ##### DeepSeek 配置说明
+                           - **API Key**: [点击到官网申请](https://platform.deepseek.com/api_keys)
+                           - **Base Url**: 固定为 https://api.deepseek.com
+                           - **Model Name**: 固定为 deepseek-chat
                            """
 
             if tips and config.ui['language'] == 'zh':
@@ -416,6 +430,10 @@ with middle_panel:
                                           index=0)
     with st.container(border=True):
         st.write(tr("Audio Settings"))
+
+        # tts_providers = ['edge', 'azure']
+        # tts_provider = st.selectbox(tr("TTS Provider"), tts_providers)
+
         voices = voice.get_all_azure_voices(
             filter_locals=support_locales)
         friendly_names = {
@@ -441,6 +459,26 @@ with middle_panel:
         voice_name = list(friendly_names.keys())[list(friendly_names.values()).index(selected_friendly_name)]
         params.voice_name = voice_name
         config.ui['voice_name'] = voice_name
+
+        if st.button(tr("Play Voice")):
+            play_content = params.video_subject
+            if not play_content:
+                play_content = params.video_script
+            if not play_content:
+                play_content = tr("Voice Example")
+            with st.spinner(tr("Synthesizing Voice")):
+                temp_dir = utils.storage_dir("temp", create=True)
+                audio_file = os.path.join(temp_dir, f"tmp-voice-{str(uuid4())}.mp3")
+                sub_maker = voice.tts(text=play_content, voice_name=voice_name, voice_file=audio_file)
+                # if the voice file generation failed, try again with a default content.
+                if not sub_maker:
+                    play_content = "This is a example voice. if you hear this, the voice synthesis failed with the original content."
+                    sub_maker = voice.tts(text=play_content, voice_name=voice_name, voice_file=audio_file)
+
+                if sub_maker and os.path.exists(audio_file):
+                    st.audio(audio_file, format="audio/mp3")
+                    if os.path.exists(audio_file):
+                        os.remove(audio_file)
 
         if voice.is_azure_v2_voice(voice_name):
             saved_azure_speech_region = config.azure.get(f"speech_region", "")
