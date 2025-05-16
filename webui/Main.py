@@ -1,5 +1,10 @@
 import os
+import platform
 import sys
+from uuid import uuid4
+
+import streamlit as st
+from loguru import logger
 
 # Add the root directory of the project to the system path to allow importing modules from the project
 root_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -9,12 +14,17 @@ if root_dir not in sys.path:
     print(sys.path)
     print("")
 
-import os
-import platform
-from uuid import uuid4
-
-import streamlit as st
-from loguru import logger
+from app.config import config
+from app.models.schema import (
+    MaterialInfo,
+    VideoAspect,
+    VideoConcatMode,
+    VideoParams,
+    VideoTransitionMode,
+)
+from app.services import llm, voice
+from app.services import task as tm
+from app.utils import utils
 
 st.set_page_config(
     page_title="MoneyPrinterTurbo",
@@ -30,18 +40,61 @@ st.set_page_config(
     },
 )
 
-from app.config import config
-from app.models.const import FILE_TYPE_IMAGES, FILE_TYPE_VIDEOS
-from app.models.schema import MaterialInfo, VideoAspect, VideoConcatMode, VideoParams
-from app.services import llm, voice
-from app.services import task as tm
-from app.utils import utils
 
-hide_streamlit_style = """
-<style>#root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 0rem;}</style>
+streamlit_style = """
+<style>
+h1 {
+    padding-top: 0 !important;
+}
+</style>
 """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-st.title(f"MoneyPrinterTurbo v{config.project_version}")
+st.markdown(streamlit_style, unsafe_allow_html=True)
+
+# 定义资源目录
+font_dir = os.path.join(root_dir, "resource", "fonts")
+song_dir = os.path.join(root_dir, "resource", "songs")
+i18n_dir = os.path.join(root_dir, "webui", "i18n")
+config_file = os.path.join(root_dir, "webui", ".streamlit", "webui.toml")
+system_locale = utils.get_system_locale()
+
+
+if "video_subject" not in st.session_state:
+    st.session_state["video_subject"] = ""
+if "video_script" not in st.session_state:
+    st.session_state["video_script"] = ""
+if "video_terms" not in st.session_state:
+    st.session_state["video_terms"] = ""
+if "ui_language" not in st.session_state:
+    st.session_state["ui_language"] = config.ui.get("language", system_locale)
+
+# 加载语言文件
+locales = utils.load_locales(i18n_dir)
+
+# 创建一个顶部栏，包含标题和语言选择
+title_col, lang_col = st.columns([3, 1])
+
+with title_col:
+    st.title(f"MoneyPrinterTurbo v{config.project_version}")
+
+with lang_col:
+    display_languages = []
+    selected_index = 0
+    for i, code in enumerate(locales.keys()):
+        display_languages.append(f"{code} - {locales[code].get('Language')}")
+        if code == st.session_state.get("ui_language", ""):
+            selected_index = i
+
+    selected_language = st.selectbox(
+        "Language / 语言",
+        options=display_languages,
+        index=selected_index,
+        key="top_language_selector",
+        label_visibility="collapsed",
+    )
+    if selected_language:
+        code = selected_language.split(" - ")[0].strip()
+        st.session_state["ui_language"] = code
+        config.ui["language"] = code
 
 support_locales = [
     "zh-CN",
@@ -53,22 +106,6 @@ support_locales = [
     "vi-VN",
     "th-TH",
 ]
-
-font_dir = os.path.join(root_dir, "resource", "fonts")
-song_dir = os.path.join(root_dir, "resource", "songs")
-i18n_dir = os.path.join(root_dir, "webui", "i18n")
-config_file = os.path.join(root_dir, "webui", ".streamlit", "webui.toml")
-system_locale = utils.get_system_locale()
-# print(f"******** system locale: {system_locale} ********")
-
-if "video_subject" not in st.session_state:
-    st.session_state["video_subject"] = ""
-if "video_script" not in st.session_state:
-    st.session_state["video_script"] = ""
-if "video_terms" not in st.session_state:
-    st.session_state["video_terms"] = ""
-if "ui_language" not in st.session_state:
-    st.session_state["ui_language"] = config.ui.get("language", system_locale)
 
 
 def get_all_fonts():
@@ -162,47 +199,32 @@ def tr(key):
     return loc.get("Translation", {}).get(key, key)
 
 
-st.write(tr("Get Help"))
-
-llm_provider = config.app.get("llm_provider", "").lower()
-
+# 创建基础设置折叠框
 if not config.app.get("hide_config", False):
     with st.expander(tr("Basic Settings"), expanded=False):
         config_panels = st.columns(3)
         left_config_panel = config_panels[0]
         middle_config_panel = config_panels[1]
         right_config_panel = config_panels[2]
-        with left_config_panel:
-            display_languages = []
-            selected_index = 0
-            for i, code in enumerate(locales.keys()):
-                display_languages.append(f"{code} - {locales[code].get('Language')}")
-                if code == st.session_state["ui_language"]:
-                    selected_index = i
 
-            selected_language = st.selectbox(
-                tr("Language"), options=display_languages, index=selected_index
+        # 左侧面板 - 日志设置
+        with left_config_panel:
+            # 是否隐藏配置面板
+            hide_config = st.checkbox(
+                tr("Hide Basic Settings"), value=config.app.get("hide_config", False)
             )
-            if selected_language:
-                code = selected_language.split(" - ")[0].strip()
-                st.session_state["ui_language"] = code
-                config.ui["language"] = code
+            config.app["hide_config"] = hide_config
 
             # 是否禁用日志显示
             hide_log = st.checkbox(
-                tr("Hide Log"), value=config.app.get("hide_log", False)
+                tr("Hide Log"), value=config.ui.get("hide_log", False)
             )
             config.ui["hide_log"] = hide_log
 
+        # 中间面板 - LLM 设置
+
         with middle_config_panel:
-            #   openai
-            #   moonshot (月之暗面)
-            #   oneapi
-            #   g4f
-            #   azure
-            #   qwen (通义千问)
-            #   gemini
-            #   ollama
+            st.write(tr("LLM Settings"))
             llm_providers = [
                 "OpenAI",
                 "Moonshot",
@@ -215,6 +237,7 @@ if not config.app.get("hide_config", False):
                 "OneAPI",
                 "Cloudflare",
                 "ERNIE",
+                "Pollinations",
             ]
             saved_llm_provider = config.app.get("llm_provider", "OpenAI").lower()
             saved_llm_provider_index = 0
@@ -249,36 +272,36 @@ if not config.app.get("hide_config", False):
 
                 with llm_helper:
                     tips = """
-                           ##### Ollama配置说明
-                           - **API Key**: 随便填写，比如 123
-                           - **Base Url**: 一般为 http://localhost:11434/v1
-                              - 如果 `MoneyPrinterTurbo` 和 `Ollama` **不在同一台机器上**，需要填写 `Ollama` 机器的IP地址
-                              - 如果 `MoneyPrinterTurbo` 是 `Docker` 部署，建议填写 `http://host.docker.internal:11434/v1`
-                           - **Model Name**: 使用 `ollama list` 查看，比如 `qwen:7b`
-                           """
+                            ##### Ollama配置说明
+                            - **API Key**: 随便填写，比如 123
+                            - **Base Url**: 一般为 http://localhost:11434/v1
+                                - 如果 `MoneyPrinterTurbo` 和 `Ollama` **不在同一台机器上**，需要填写 `Ollama` 机器的IP地址
+                                - 如果 `MoneyPrinterTurbo` 是 `Docker` 部署，建议填写 `http://host.docker.internal:11434/v1`
+                            - **Model Name**: 使用 `ollama list` 查看，比如 `qwen:7b`
+                            """
 
             if llm_provider == "openai":
                 if not llm_model_name:
                     llm_model_name = "gpt-3.5-turbo"
                 with llm_helper:
                     tips = """
-                           ##### OpenAI 配置说明
-                           > 需要VPN开启全局流量模式
-                           - **API Key**: [点击到官网申请](https://platform.openai.com/api-keys)
-                           - **Base Url**: 可以留空
-                           - **Model Name**: 填写**有权限**的模型，[点击查看模型列表](https://platform.openai.com/settings/organization/limits)
-                           """
+                            ##### OpenAI 配置说明
+                            > 需要VPN开启全局流量模式
+                            - **API Key**: [点击到官网申请](https://platform.openai.com/api-keys)
+                            - **Base Url**: 可以留空
+                            - **Model Name**: 填写**有权限**的模型，[点击查看模型列表](https://platform.openai.com/settings/organization/limits)
+                            """
 
             if llm_provider == "moonshot":
                 if not llm_model_name:
                     llm_model_name = "moonshot-v1-8k"
                 with llm_helper:
                     tips = """
-                           ##### Moonshot 配置说明
-                           - **API Key**: [点击到官网申请](https://platform.moonshot.cn/console/api-keys)
-                           - **Base Url**: 固定为 https://api.moonshot.cn/v1
-                           - **Model Name**: 比如 moonshot-v1-8k，[点击查看模型列表](https://platform.moonshot.cn/docs/intro#%E6%A8%A1%E5%9E%8B%E5%88%97%E8%A1%A8)
-                           """
+                            ##### Moonshot 配置说明
+                            - **API Key**: [点击到官网申请](https://platform.moonshot.cn/console/api-keys)
+                            - **Base Url**: 固定为 https://api.moonshot.cn/v1
+                            - **Model Name**: 比如 moonshot-v1-8k，[点击查看模型列表](https://platform.moonshot.cn/docs/intro#%E6%A8%A1%E5%9E%8B%E5%88%97%E8%A1%A8)
+                            """
             if llm_provider == "oneapi":
                 if not llm_model_name:
                     llm_model_name = (
@@ -297,32 +320,32 @@ if not config.app.get("hide_config", False):
                     llm_model_name = "qwen-max"
                 with llm_helper:
                     tips = """
-                           ##### 通义千问Qwen 配置说明
-                           - **API Key**: [点击到官网申请](https://dashscope.console.aliyun.com/apiKey)
-                           - **Base Url**: 留空
-                           - **Model Name**: 比如 qwen-max，[点击查看模型列表](https://help.aliyun.com/zh/dashscope/developer-reference/model-introduction#3ef6d0bcf91wy)
-                           """
+                            ##### 通义千问Qwen 配置说明
+                            - **API Key**: [点击到官网申请](https://dashscope.console.aliyun.com/apiKey)
+                            - **Base Url**: 留空
+                            - **Model Name**: 比如 qwen-max，[点击查看模型列表](https://help.aliyun.com/zh/dashscope/developer-reference/model-introduction#3ef6d0bcf91wy)
+                            """
 
             if llm_provider == "g4f":
                 if not llm_model_name:
                     llm_model_name = "gpt-3.5-turbo"
                 with llm_helper:
                     tips = """
-                           ##### gpt4free 配置说明
-                           > [GitHub开源项目](https://github.com/xtekky/gpt4free)，可以免费使用GPT模型，但是**稳定性较差**
-                           - **API Key**: 随便填写，比如 123
-                           - **Base Url**: 留空
-                           - **Model Name**: 比如 gpt-3.5-turbo，[点击查看模型列表](https://github.com/xtekky/gpt4free/blob/main/g4f/models.py#L308)
-                           """
+                            ##### gpt4free 配置说明
+                            > [GitHub开源项目](https://github.com/xtekky/gpt4free)，可以免费使用GPT模型，但是**稳定性较差**
+                            - **API Key**: 随便填写，比如 123
+                            - **Base Url**: 留空
+                            - **Model Name**: 比如 gpt-3.5-turbo，[点击查看模型列表](https://github.com/xtekky/gpt4free/blob/main/g4f/models.py#L308)
+                            """
             if llm_provider == "azure":
                 with llm_helper:
                     tips = """
-                           ##### Azure 配置说明
-                           > [点击查看如何部署模型](https://learn.microsoft.com/zh-cn/azure/ai-services/openai/how-to/create-resource)
-                           - **API Key**: [点击到Azure后台创建](https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/OpenAI)
-                           - **Base Url**: 留空
-                           - **Model Name**: 填写你实际的部署名
-                           """
+                            ##### Azure 配置说明
+                            > [点击查看如何部署模型](https://learn.microsoft.com/zh-cn/azure/ai-services/openai/how-to/create-resource)
+                            - **API Key**: [点击到Azure后台创建](https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/OpenAI)
+                            - **Base Url**: 留空
+                            - **Model Name**: 填写你实际的部署名
+                            """
 
             if llm_provider == "gemini":
                 if not llm_model_name:
@@ -332,10 +355,10 @@ if not config.app.get("hide_config", False):
                     tips = """
                             ##### Gemini 配置说明
                             > 需要VPN开启全局流量模式
-                           - **API Key**: [点击到官网申请](https://ai.google.dev/)
-                           - **Base Url**: 留空
-                           - **Model Name**: 比如 gemini-1.0-pro
-                           """
+                            - **API Key**: [点击到官网申请](https://ai.google.dev/)
+                            - **Base Url**: 留空
+                            - **Model Name**: 比如 gemini-1.0-pro
+                            """
 
             if llm_provider == "deepseek":
                 if not llm_model_name:
@@ -344,20 +367,31 @@ if not config.app.get("hide_config", False):
                     llm_base_url = "https://api.deepseek.com"
                 with llm_helper:
                     tips = """
-                           ##### DeepSeek 配置说明
-                           - **API Key**: [点击到官网申请](https://platform.deepseek.com/api_keys)
-                           - **Base Url**: 固定为 https://api.deepseek.com
-                           - **Model Name**: 固定为 deepseek-chat
-                           """
+                            ##### DeepSeek 配置说明
+                            - **API Key**: [点击到官网申请](https://platform.deepseek.com/api_keys)
+                            - **Base Url**: 固定为 https://api.deepseek.com
+                            - **Model Name**: 固定为 deepseek-chat
+                            """
 
             if llm_provider == "ernie":
                 with llm_helper:
                     tips = """
-                           ##### 百度文心一言 配置说明
-                           - **API Key**: [点击到官网申请](https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application)
-                           - **Secret Key**: [点击到官网申请](https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application)
-                           - **Base Url**: 填写 **请求地址** [点击查看文档](https://cloud.baidu.com/doc/WENXINWORKSHOP/s/jlil56u11#%E8%AF%B7%E6%B1%82%E8%AF%B4%E6%98%8E)
-                           """
+                            ##### 百度文心一言 配置说明
+                            - **API Key**: [点击到官网申请](https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application)
+                            - **Secret Key**: [点击到官网申请](https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application)
+                            - **Base Url**: 填写 **请求地址** [点击查看文档](https://cloud.baidu.com/doc/WENXINWORKSHOP/s/jlil56u11#%E8%AF%B7%E6%B1%82%E8%AF%B4%E6%98%8E)
+                            """
+
+            if llm_provider == "pollinations":
+                if not llm_model_name:
+                    llm_model_name = "default"
+                with llm_helper:
+                    tips = """
+                            ##### Pollinations AI Configuration
+                            - **API Key**: Optional - Leave empty for public access
+                            - **Base Url**: Default is https://text.pollinations.ai/openai
+                            - **Model Name**: Use 'openai-fast' or specify a model name
+                            """
 
             if tips and config.ui["language"] == "zh":
                 st.warning(
@@ -400,6 +434,7 @@ if not config.app.get("hide_config", False):
                 if st_llm_account_id:
                     config.app[f"{llm_provider}_account_id"] = st_llm_account_id
 
+        # 右侧面板 - API 密钥设置
         with right_config_panel:
 
             def get_keys_from_config(cfg_key):
@@ -414,6 +449,8 @@ if not config.app.get("hide_config", False):
                 if value:
                     config.app[cfg_key] = value.split(",")
 
+            st.write(tr("Video Source Settings"))
+
             pexels_api_key = get_keys_from_config("pexels_api_keys")
             pexels_api_key = st.text_input(
                 tr("Pexels API Key"), value=pexels_api_key, type="password"
@@ -426,6 +463,7 @@ if not config.app.get("hide_config", False):
             )
             save_keys_to_config("pixabay_api_keys", pixabay_api_key)
 
+llm_provider = config.app.get("llm_provider", "").lower()
 panel = st.columns(3)
 left_panel = panel[0]
 middle_panel = panel[1]
@@ -438,7 +476,9 @@ with left_panel:
     with st.container(border=True):
         st.write(tr("Video Script Settings"))
         params.video_subject = st.text_input(
-            tr("Video Subject"), value=st.session_state["video_subject"]
+            tr("Video Subject"),
+            value=st.session_state["video_subject"],
+            key="video_subject_input",
         ).strip()
 
         video_languages = [
@@ -450,8 +490,12 @@ with left_panel:
         selected_index = st.selectbox(
             tr("Script Language"),
             index=0,
-            options=range(len(video_languages)),  # 使用索引作为内部选项值
-            format_func=lambda x: video_languages[x][0],  # 显示给用户的是标签
+            options=range(
+                len(video_languages)
+            ),  # Use the index as the internal option value
+            format_func=lambda x: video_languages[x][
+                0
+            ],  # The label is displayed to the user
         )
         params.video_language = video_languages[selected_index][1]
 
@@ -463,9 +507,13 @@ with left_panel:
                     video_subject=params.video_subject, language=params.video_language
                 )
                 terms = llm.generate_terms(params.video_subject, script)
-                st.session_state["video_script"] = script
-                st.session_state["video_terms"] = ", ".join(terms)
-
+                if "Error: " in script:
+                    st.error(tr(script))
+                elif "Error: " in terms:
+                    st.error(tr(terms))
+                else:
+                    st.session_state["video_script"] = script
+                    st.session_state["video_terms"] = ", ".join(terms)
         params.video_script = st.text_area(
             tr("Video Script"), value=st.session_state["video_script"], height=280
         )
@@ -476,10 +524,13 @@ with left_panel:
 
             with st.spinner(tr("Generating Video Keywords")):
                 terms = llm.generate_terms(params.video_subject, params.video_script)
-                st.session_state["video_terms"] = ", ".join(terms)
+                if "Error: " in terms:
+                    st.error(tr(terms))
+                else:
+                    st.session_state["video_terms"] = ", ".join(terms)
 
         params.video_terms = st.text_area(
-            tr("Video Keywords"), value=st.session_state["video_terms"], height=50
+            tr("Video Keywords"), value=st.session_state["video_terms"]
         )
 
 with middle_panel:
@@ -513,7 +564,6 @@ with middle_panel:
         config.app["video_source"] = params.video_source
 
         if params.video_source == "local":
-            _supported_types = FILE_TYPE_VIDEOS + FILE_TYPE_IMAGES
             uploaded_files = st.file_uploader(
                 "Upload Local Files",
                 type=["mp4", "mov", "avi", "flv", "mkv", "jpg", "jpeg", "png"],
@@ -523,11 +573,34 @@ with middle_panel:
         selected_index = st.selectbox(
             tr("Video Concat Mode"),
             index=1,
-            options=range(len(video_concat_modes)),  # 使用索引作为内部选项值
-            format_func=lambda x: video_concat_modes[x][0],  # 显示给用户的是标签
+            options=range(
+                len(video_concat_modes)
+            ),  # Use the index as the internal option value
+            format_func=lambda x: video_concat_modes[x][
+                0
+            ],  # The label is displayed to the user
         )
         params.video_concat_mode = VideoConcatMode(
             video_concat_modes[selected_index][1]
+        )
+
+        # 视频转场模式
+        video_transition_modes = [
+            (tr("None"), VideoTransitionMode.none.value),
+            (tr("Shuffle"), VideoTransitionMode.shuffle.value),
+            (tr("FadeIn"), VideoTransitionMode.fade_in.value),
+            (tr("FadeOut"), VideoTransitionMode.fade_out.value),
+            (tr("SlideIn"), VideoTransitionMode.slide_in.value),
+            (tr("SlideOut"), VideoTransitionMode.slide_out.value),
+        ]
+        selected_index = st.selectbox(
+            tr("Video Transition Mode"),
+            options=range(len(video_transition_modes)),
+            format_func=lambda x: video_transition_modes[x][0],
+            index=0,
+        )
+        params.video_transition_mode = VideoTransitionMode(
+            video_transition_modes[selected_index][1]
         )
 
         video_aspect_ratios = [
@@ -536,8 +609,12 @@ with middle_panel:
         ]
         selected_index = st.selectbox(
             tr("Video Ratio"),
-            options=range(len(video_aspect_ratios)),  # 使用索引作为内部选项值
-            format_func=lambda x: video_aspect_ratios[x][0],  # 显示给用户的是标签
+            options=range(
+                len(video_aspect_ratios)
+            ),  # Use the index as the internal option value
+            format_func=lambda x: video_aspect_ratios[x][
+                0
+            ],  # The label is displayed to the user
         )
         params.video_aspect = VideoAspect(video_aspect_ratios[selected_index][1])
 
@@ -552,42 +629,103 @@ with middle_panel:
     with st.container(border=True):
         st.write(tr("Audio Settings"))
 
-        # tts_providers = ['edge', 'azure']
-        # tts_provider = st.selectbox(tr("TTS Provider"), tts_providers)
+        # 添加TTS服务器选择下拉框
+        tts_servers = [
+            ("azure-tts-v1", "Azure TTS V1"),
+            ("azure-tts-v2", "Azure TTS V2"),
+            ("siliconflow", "SiliconFlow TTS"),
+        ]
 
-        voices = voice.get_all_azure_voices(filter_locals=support_locales)
+        # 获取保存的TTS服务器，默认为v1
+        saved_tts_server = config.ui.get("tts_server", "azure-tts-v1")
+        saved_tts_server_index = 0
+        for i, (server_value, _) in enumerate(tts_servers):
+            if server_value == saved_tts_server:
+                saved_tts_server_index = i
+                break
+
+        selected_tts_server_index = st.selectbox(
+            tr("TTS Servers"),
+            options=range(len(tts_servers)),
+            format_func=lambda x: tts_servers[x][1],
+            index=saved_tts_server_index,
+        )
+
+        selected_tts_server = tts_servers[selected_tts_server_index][0]
+        config.ui["tts_server"] = selected_tts_server
+
+        # 根据选择的TTS服务器获取声音列表
+        filtered_voices = []
+
+        if selected_tts_server == "siliconflow":
+            # 获取硅基流动的声音列表
+            filtered_voices = voice.get_siliconflow_voices()
+        else:
+            # 获取Azure的声音列表
+            all_voices = voice.get_all_azure_voices(filter_locals=None)
+
+            # 根据选择的TTS服务器筛选声音
+            for v in all_voices:
+                if selected_tts_server == "azure-tts-v2":
+                    # V2版本的声音名称中包含"v2"
+                    if "V2" in v:
+                        filtered_voices.append(v)
+                else:
+                    # V1版本的声音名称中不包含"v2"
+                    if "V2" not in v:
+                        filtered_voices.append(v)
+
         friendly_names = {
             v: v.replace("Female", tr("Female"))
             .replace("Male", tr("Male"))
             .replace("Neural", "")
-            for v in voices
+            for v in filtered_voices
         }
+
         saved_voice_name = config.ui.get("voice_name", "")
         saved_voice_name_index = 0
+
+        # 检查保存的声音是否在当前筛选的声音列表中
         if saved_voice_name in friendly_names:
             saved_voice_name_index = list(friendly_names.keys()).index(saved_voice_name)
         else:
-            for i, v in enumerate(voices):
-                if (
-                    v.lower().startswith(st.session_state["ui_language"].lower())
-                    and "V2" not in v
-                ):
+            # 如果不在，则根据当前UI语言选择一个默认声音
+            for i, v in enumerate(filtered_voices):
+                if v.lower().startswith(st.session_state["ui_language"].lower()):
                     saved_voice_name_index = i
                     break
 
-        selected_friendly_name = st.selectbox(
-            tr("Speech Synthesis"),
-            options=list(friendly_names.values()),
-            index=saved_voice_name_index,
-        )
+        # 如果没有找到匹配的声音，使用第一个声音
+        if saved_voice_name_index >= len(friendly_names) and friendly_names:
+            saved_voice_name_index = 0
 
-        voice_name = list(friendly_names.keys())[
-            list(friendly_names.values()).index(selected_friendly_name)
-        ]
-        params.voice_name = voice_name
-        config.ui["voice_name"] = voice_name
+        # 确保有声音可选
+        if friendly_names:
+            selected_friendly_name = st.selectbox(
+                tr("Speech Synthesis"),
+                options=list(friendly_names.values()),
+                index=min(saved_voice_name_index, len(friendly_names) - 1)
+                if friendly_names
+                else 0,
+            )
 
-        if st.button(tr("Play Voice")):
+            voice_name = list(friendly_names.keys())[
+                list(friendly_names.values()).index(selected_friendly_name)
+            ]
+            params.voice_name = voice_name
+            config.ui["voice_name"] = voice_name
+        else:
+            # 如果没有声音可选，显示提示信息
+            st.warning(
+                tr(
+                    "No voices available for the selected TTS server. Please select another server."
+                )
+            )
+            params.voice_name = ""
+            config.ui["voice_name"] = ""
+
+        # 只有在有声音可选时才显示试听按钮
+        if friendly_names and st.button(tr("Play Voice")):
             play_content = params.video_subject
             if not play_content:
                 play_content = params.video_script
@@ -601,6 +739,7 @@ with middle_panel:
                     voice_name=voice_name,
                     voice_rate=params.voice_rate,
                     voice_file=audio_file,
+                    voice_volume=params.voice_volume,
                 )
                 # if the voice file generation failed, try again with a default content.
                 if not sub_maker:
@@ -610,6 +749,7 @@ with middle_panel:
                         voice_name=voice_name,
                         voice_rate=params.voice_rate,
                         voice_file=audio_file,
+                        voice_volume=params.voice_volume,
                     )
 
                 if sub_maker and os.path.exists(audio_file):
@@ -617,17 +757,51 @@ with middle_panel:
                     if os.path.exists(audio_file):
                         os.remove(audio_file)
 
-        if voice.is_azure_v2_voice(voice_name):
+        # 当选择V2版本或者声音是V2声音时，显示服务区域和API key输入框
+        if selected_tts_server == "azure-tts-v2" or (
+            voice_name and voice.is_azure_v2_voice(voice_name)
+        ):
             saved_azure_speech_region = config.azure.get("speech_region", "")
             saved_azure_speech_key = config.azure.get("speech_key", "")
             azure_speech_region = st.text_input(
-                tr("Speech Region"), value=saved_azure_speech_region
+                tr("Speech Region"),
+                value=saved_azure_speech_region,
+                key="azure_speech_region_input",
             )
             azure_speech_key = st.text_input(
-                tr("Speech Key"), value=saved_azure_speech_key, type="password"
+                tr("Speech Key"),
+                value=saved_azure_speech_key,
+                type="password",
+                key="azure_speech_key_input",
             )
             config.azure["speech_region"] = azure_speech_region
             config.azure["speech_key"] = azure_speech_key
+
+        # 当选择硅基流动时，显示API key输入框和说明信息
+        if selected_tts_server == "siliconflow" or (
+            voice_name and voice.is_siliconflow_voice(voice_name)
+        ):
+            saved_siliconflow_api_key = config.siliconflow.get("api_key", "")
+
+            siliconflow_api_key = st.text_input(
+                tr("SiliconFlow API Key"),
+                value=saved_siliconflow_api_key,
+                type="password",
+                key="siliconflow_api_key_input",
+            )
+
+            # 显示硅基流动的说明信息
+            st.info(
+                tr("SiliconFlow TTS Settings")
+                + ":\n"
+                + "- "
+                + tr("Speed: Range [0.25, 4.0], default is 1.0")
+                + "\n"
+                + "- "
+                + tr("Volume: Uses Speech Volume setting, default 1.0 maps to gain 0")
+            )
+
+            config.siliconflow["api_key"] = siliconflow_api_key
 
         params.voice_volume = st.selectbox(
             tr("Speech Volume"),
@@ -649,15 +823,21 @@ with middle_panel:
         selected_index = st.selectbox(
             tr("Background Music"),
             index=1,
-            options=range(len(bgm_options)),  # 使用索引作为内部选项值
-            format_func=lambda x: bgm_options[x][0],  # 显示给用户的是标签
+            options=range(
+                len(bgm_options)
+            ),  # Use the index as the internal option value
+            format_func=lambda x: bgm_options[x][
+                0
+            ],  # The label is displayed to the user
         )
-        # 获取选择的背景音乐类型
+        # Get the selected background music type
         params.bgm_type = bgm_options[selected_index][1]
 
-        # 根据选择显示或隐藏组件
+        # Show or hide components based on the selection
         if params.bgm_type == "custom":
-            custom_bgm_file = st.text_input(tr("Custom Background Music File"))
+            custom_bgm_file = st.text_input(
+                tr("Custom Background Music File"), key="custom_bgm_file_input"
+            )
             if custom_bgm_file and os.path.exists(custom_bgm_file):
                 params.bgm_file = custom_bgm_file
                 # st.write(f":red[已选择自定义背景音乐]：**{custom_bgm_file}**")
@@ -672,7 +852,7 @@ with right_panel:
         st.write(tr("Subtitle Settings"))
         params.subtitle_enabled = st.checkbox(tr("Enable Subtitles"), value=True)
         font_names = get_all_fonts()
-        saved_font_name = config.ui.get("font_name", "")
+        saved_font_name = config.ui.get("font_name", "MicrosoftYaHeiBold.ttc")
         saved_font_name_index = 0
         if saved_font_name in font_names:
             saved_font_name_index = font_names.index(saved_font_name)
@@ -697,7 +877,9 @@ with right_panel:
 
         if params.subtitle_position == "custom":
             custom_position = st.text_input(
-                tr("Custom Position (% from top)"), value="70.0"
+                tr("Custom Position (% from top)"),
+                value="70.0",
+                key="custom_position_input",
             )
             try:
                 params.custom_position = float(custom_position)
@@ -731,11 +913,6 @@ if start_button:
     task_id = str(uuid4())
     if not params.video_subject and not params.video_script:
         st.error(tr("Video Script and Subject Cannot Both Be Empty"))
-        scroll_to_bottom()
-        st.stop()
-
-    if llm_provider != "g4f" and not config.app.get(f"{llm_provider}_api_key", ""):
-        st.error(tr("Please Enter the LLM API Key"))
         scroll_to_bottom()
         st.stop()
 

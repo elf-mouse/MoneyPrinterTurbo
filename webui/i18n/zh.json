@@ -1,6 +1,14 @@
 {
   "Language": "简体中文",
   "Translation": {
+    "Login Required": "需要登录",
+    "Please login to access settings": "请登录后访问配置设置 (:gray[默认用户名: admin, 密码: admin, 您可以在 config.toml 中修改])",
+    "Username": "用户名",
+    "Password": "密码",
+    "Login": "登录",
+    "Login Error": "登录错误",
+    "Incorrect username or password": "用户名或密码不正确",
+    "Please enter your username and password": "请输入用户名和密码",
     "Video Script Settings": "**文案设置**",
     "Video Subject": "视频主题（给定一个关键词，:red[AI自动生成]视频文案）",
     "Script Language": "生成视频脚本的语言（一般情况AI会自动根据你输入的主题语言输出）",
@@ -16,6 +24,13 @@
     "Video Concat Mode": "视频拼接模式",
     "Random": "随机拼接（推荐）",
     "Sequential": "顺序拼接",
+    "Video Transition Mode": "视频转场模式",
+    "None": "无转场",
+    "Shuffle": "随机转场",
+    "FadeIn": "渐入",
+    "FadeOut": "渐出",
+    "SlideIn": "滑动入",
+    "SlideOut": "滑动出",
     "Video Ratio": "视频比例",
     "Portrait": "竖屏 9:16（抖音视频）",
     "Landscape": "横屏 16:9（西瓜视频）",
@@ -76,6 +91,15 @@
     "Voice Example": "这是一段测试语音合成的示例文本",
     "Synthesizing Voice": "语音合成中，请稍候...",
     "TTS Provider": "语音合成提供商",
-    "Hide Log": "隐藏日志"
+    "TTS Servers": "TTS服务器",
+    "No voices available for the selected TTS server. Please select another server.": "当前选择的TTS服务器没有可用的声音，请选择其他服务器。",
+    "SiliconFlow API Key": "硅基流动API密钥 [点击获取](https://cloud.siliconflow.cn/account/ak)",
+    "SiliconFlow TTS Settings": "硅基流动TTS设置",
+    "Speed: Range [0.25, 4.0], default is 1.0": "语速范围 [0.25, 4.0]，默认值为1.0",
+    "Volume: Uses Speech Volume setting, default 1.0 maps to gain 0": "音量：使用朗读音量设置，默认值1.0对应增益0",
+    "Hide Log": "隐藏日志",
+    "Hide Basic Settings": "隐藏基础设置\n\n隐藏后，基础设置面板将不会显示在页面中。\n\n如需要再次显示，请在 `config.toml` 中设置 `hide_config = false`",
+    "LLM Settings": "**大模型设置**",
+    "Video Source Settings": "**视频源设置**"
   }
 }

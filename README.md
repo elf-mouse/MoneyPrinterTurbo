@@ -58,9 +58,9 @@
 - [x] 支持 **字幕生成**，可以调整 `字体`、`位置`、`颜色`、`大小`，同时支持`字幕描边`设置
 - [x] 支持 **背景音乐**，随机或者指定音乐文件，可设置`背景音乐音量`
 - [x] 视频素材来源 **高清**，而且 **无版权**，也可以使用自己的 **本地素材**
-- [x] 支持 **OpenAI**、**Moonshot**、**Azure**、**gpt4free**、**one-api**、**通义千问**、**Google Gemini**、**Ollama**、
-  **DeepSeek**、 **文心一言** 等多种模型接入
+- [x] 支持 **OpenAI**、**Moonshot**、**Azure**、**gpt4free**、**one-api**、**通义千问**、**Google Gemini**、**Ollama**、**DeepSeek**、 **文心一言**, **Pollinations** 等多种模型接入
     - 中国用户建议使用 **DeepSeek** 或 **Moonshot** 作为大模型提供商（国内可直接访问，不需要VPN。注册就送额度，基本够用）
+
 
 ### 后期计划 📅
 
@@ -71,10 +71,6 @@
 - [ ] 增加视频长度选项：短、中、长
 - [ ] 支持更多的语音合成服务商，比如 OpenAI TTS
 - [ ] 自动上传到YouTube平台
-
-## 交流讨论 💬
-
-<img src="docs/wechat-group.jpg" width="250">
 
 ## 视频演示 📺
 
@@ -116,23 +112,28 @@
 
 ## 配置要求 📦
 
-- 建议最低 CPU 4核或以上，内存 8G 或以上，显卡非必须
+- 建议最低 CPU **4核** 或以上，内存 **4G** 或以上，显卡非必须
 - Windows 10 或 MacOS 11.0 以上系统
+
 
 ## 快速开始 🚀
 
+### 在 Google Colab 中运行
+免去本地环境配置，点击直接在 Google Colab 中快速体验 MoneyPrinterTurbo
+
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/harry0703/MoneyPrinterTurbo/blob/main/docs/MoneyPrinterTurbo.ipynb)
+
+
+### Windows一键启动包
+
 下载一键启动包，解压直接使用（路径不要有 **中文**、**特殊字符**、**空格**）
 
-### Windows
-- 百度网盘（1.2.1 最新版本）: https://pan.baidu.com/s/1pSNjxTYiVENulTLm6zieMQ?pwd=g36q 提取码: g36q
+- 百度网盘（v1.2.6）: https://pan.baidu.com/s/1wg0UaIyXpO3SqIpaq790SQ?pwd=sbqx 提取码: sbqx
+- Google Drive (v1.2.6): https://drive.google.com/file/d/1HsbzfT7XunkrCrHw5ncUjFX8XX4zAuUh/view?usp=sharing
 
 下载后，建议先**双击执行** `update.bat` 更新到**最新代码**，然后双击 `start.bat` 启动
 
 启动后，会自动打开浏览器（如果打开是空白，建议换成 **Chrome** 或者 **Edge** 打开）
-
-### 其他系统
-
-还没有制作一键启动包，看下面的 **安装部署** 部分，建议使用 **docker** 部署，更加方便。
 
 ## 安装部署 📥
 
@@ -147,7 +148,7 @@
 git clone https://github.com/harry0703/MoneyPrinterTurbo.git
 ```
 
-#### ② 修改配置文件
+#### ② 修改配置文件（可选，建议启动后也可以在 WebUI 里面配置）
 
 - 将 `config.example.toml` 文件复制一份，命名为 `config.toml`
 - 按照 `config.toml` 文件中的说明，配置好 `pexels_api_keys` 和 `llm_provider`，并根据 llm_provider 对应的服务商，配置相关的
@@ -168,6 +169,8 @@ git clone https://github.com/harry0703/MoneyPrinterTurbo.git
 cd MoneyPrinterTurbo
 docker-compose up
 ```
+
+> 注意：最新版的docker安装时会自动以插件的形式安装docker compose，启动命令调整为docker compose up
 
 #### ② 访问Web界面
 
@@ -191,7 +194,7 @@ docker-compose up
 ```shell
 git clone https://github.com/harry0703/MoneyPrinterTurbo.git
 cd MoneyPrinterTurbo
-conda create -n MoneyPrinterTurbo python=3.10
+conda create -n MoneyPrinterTurbo python=3.11
 conda activate MoneyPrinterTurbo
 pip install -r requirements.txt
 ```
@@ -224,14 +227,12 @@ pip install -r requirements.txt
 ###### Windows
 
 ```bat
-conda activate MoneyPrinterTurbo
 webui.bat
 ```
 
 ###### MacOS or Linux
 
 ```shell
-conda activate MoneyPrinterTurbo
 sh webui.sh
 ```
 
@@ -299,33 +300,6 @@ MoneyPrinterTurbo
 
 ## 常见问题 🤔
 
-### ❓如何使用免费的OpenAI GPT-3.5模型?
-
-[OpenAI宣布ChatGPT里面3.5已经免费了](https://openai.com/blog/start-using-chatgpt-instantly)，有开发者将其封装成了API，可以直接调用
-
-**确保你安装和启动了docker服务**，执行以下命令启动docker服务
-
-```shell
-docker run -p 3040:3040 missuo/freegpt35
-```
-
-启动成功后，修改 `config.toml` 中的配置
-
-- `llm_provider` 设置为 `openai`
-- `openai_api_key` 随便填写一个即可，比如 '123456'
-- `openai_base_url` 改为 `http://localhost:3040/v1/`
-- `openai_model_name` 改为 `gpt-3.5-turbo`
-
-> 注意：该方式稳定性较差
-
-### ❓AttributeError: 'str' object has no attribute 'choices'`
-
-这个问题是由于大模型没有返回正确的回复导致的。
-
-大概率是网络原因， 使用 **VPN**，或者设置 `openai_base_url` 为你的代理 ，应该就可以解决了。
-
-同时建议使用 **Moonshot** 或 **DeepSeek** 作为大模型提供商，这两个服务商在国内访问速度更快，更加稳定。
-
 ### ❓RuntimeError: No ffmpeg exe could be found
 
 通常情况下，ffmpeg 会被自动下载，并且会被自动检测到。
@@ -385,11 +359,6 @@ Trying to load the model directly from the local cache, if it exists.
 
 - 可以提交 [issue](https://github.com/harry0703/MoneyPrinterTurbo/issues)
   或者 [pull request](https://github.com/harry0703/MoneyPrinterTurbo/pulls)。
-
-## 参考项目 📚
-
-该项目基于 https://github.com/FujiwaraChoki/MoneyPrinter 重构而来，做了大量的优化，增加了更多的功能。
-感谢原作者的开源精神。
 
 ## 许可证 📝
 

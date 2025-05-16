@@ -1,6 +1,14 @@
 {
   "Language": "English",
   "Translation": {
+    "Login Required": "Login Required",
+    "Please login to access settings": "Please login to access settings",
+    "Username": "Username",
+    "Password": "Password",
+    "Login": "Login",
+    "Login Error": "Login Error",
+    "Incorrect username or password": "Incorrect username or password",
+    "Please enter your username and password": "Please enter your username and password",
     "Video Script Settings": "**Video Script Settings**",
     "Video Subject": "Video Subject (Provide a keyword, :red[AI will automatically generate] video script)",
     "Script Language": "Language for Generating Video Script (AI will automatically output based on the language of your subject)",
@@ -16,6 +24,13 @@
     "Video Concat Mode": "Video Concatenation Mode",
     "Random": "Random Concatenation (Recommended)",
     "Sequential": "Sequential Concatenation",
+    "Video Transition Mode": "Video Transition Mode",
+    "None": "None",
+    "Shuffle": "Shuffle",
+    "FadeIn": "FadeIn",
+    "FadeOut": "FadeOut",
+    "SlideIn": "SlideIn",
+    "SlideOut": "SlideOut",
     "Video Ratio": "Video Aspect Ratio",
     "Portrait": "Portrait 9:16",
     "Landscape": "Landscape 16:9",
@@ -76,6 +91,15 @@
     "Voice Example": "This is an example text for testing speech synthesis",
     "Synthesizing Voice": "Synthesizing voice, please wait...",
     "TTS Provider": "Select the voice synthesis provider",
-    "Hide Log": "Hide Log"
+    "TTS Servers": "TTS Servers",
+    "No voices available for the selected TTS server. Please select another server.": "No voices available for the selected TTS server. Please select another server.",
+    "SiliconFlow API Key": "SiliconFlow API Key [Click to get](https://cloud.siliconflow.cn/account/ak)",
+    "SiliconFlow TTS Settings": "SiliconFlow TTS Settings",
+    "Speed: Range [0.25, 4.0], default is 1.0": "Speed: Range [0.25, 4.0], default is 1.0",
+    "Volume: Uses Speech Volume setting, default 1.0 maps to gain 0": "Volume: Uses Speech Volume setting, default 1.0 maps to gain 0",
+    "Hide Log": "Hide Log",
+    "Hide Basic Settings": "Hide Basic Settings\n\nHidden, the basic settings panel will not be displayed on the page.\n\nIf you need to display it again, please set `hide_config = false` in `config.toml`",
+    "LLM Settings": "**LLM Settings**",
+    "Video Source Settings": "**Video Source Settings**"
   }
 }
