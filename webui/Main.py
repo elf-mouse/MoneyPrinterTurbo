@@ -105,6 +105,7 @@ support_locales = [
     "fr-FR",
     "vi-VN",
     "th-TH",
+    "tr-TR",
 ]
 
 
@@ -231,6 +232,7 @@ if not config.app.get("hide_config", False):
                 "Azure",
                 "Qwen",
                 "DeepSeek",
+                "ModelScope",
                 "Gemini",
                 "Ollama",
                 "G4f",
@@ -371,6 +373,19 @@ if not config.app.get("hide_config", False):
                             - **API Key**: [点击到官网申请](https://platform.deepseek.com/api_keys)
                             - **Base Url**: 固定为 https://api.deepseek.com
                             - **Model Name**: 固定为 deepseek-chat
+                            """
+
+            if llm_provider == "modelscope":
+                if not llm_model_name:
+                    llm_model_name = "Qwen/Qwen3-32B"
+                if not llm_base_url:
+                    llm_base_url = "https://api-inference.modelscope.cn/v1/"
+                with llm_helper:
+                    tips = """
+                            ##### ModelScope 配置说明
+                            - **API Key**: [点击到官网申请](https://modelscope.cn/docs/model-service/API-Inference/intro)
+                            - **Base Url**: 固定为 https://api-inference.modelscope.cn/v1/
+                            - **Model Name**: 比如 Qwen/Qwen3-32B，[点击查看模型列表](https://modelscope.cn/models?filter=inference_type&page=1)
                             """
 
             if llm_provider == "ernie":
@@ -634,6 +649,7 @@ with middle_panel:
             ("azure-tts-v1", "Azure TTS V1"),
             ("azure-tts-v2", "Azure TTS V2"),
             ("siliconflow", "SiliconFlow TTS"),
+            ("gemini-tts", "Google Gemini TTS"),
         ]
 
         # 获取保存的TTS服务器，默认为v1
@@ -660,6 +676,9 @@ with middle_panel:
         if selected_tts_server == "siliconflow":
             # 获取硅基流动的声音列表
             filtered_voices = voice.get_siliconflow_voices()
+        elif selected_tts_server == "gemini-tts":
+            # 获取Gemini TTS的声音列表
+            filtered_voices = voice.get_gemini_voices()
         else:
             # 获取Azure的声音列表
             all_voices = voice.get_all_azure_voices(filter_locals=None)
@@ -906,6 +925,69 @@ with right_panel:
             params.stroke_color = st.color_picker(tr("Stroke Color"), "#000000")
         with stroke_cols[1]:
             params.stroke_width = st.slider(tr("Stroke Width"), 0.0, 10.0, 1.5)
+    with st.expander(tr("Click to show API Key management"), expanded=False):
+        st.subheader(tr("Manage Pexels and Pixabay API Keys"))
+
+        col1, col2 = st.tabs(["Pexels API Keys", "Pixabay API Keys"])
+
+        with col1:
+            st.subheader("Pexels API Keys")
+            if config.app["pexels_api_keys"]:
+                st.write(tr("Current Keys:"))
+                for key in config.app["pexels_api_keys"]:
+                    st.code(key)
+            else:
+                st.info(tr("No Pexels API Keys currently"))
+
+            new_key = st.text_input(tr("Add Pexels API Key"), key="pexels_new_key")
+            if st.button(tr("Add Pexels API Key")):
+                if new_key and new_key not in config.app["pexels_api_keys"]:
+                    config.app["pexels_api_keys"].append(new_key)
+                    config.save_config()
+                    st.success(tr("Pexels API Key added successfully"))
+                elif new_key in config.app["pexels_api_keys"]:
+                    st.warning(tr("This API Key already exists"))
+                else:
+                    st.error(tr("Please enter a valid API Key"))
+
+            if config.app["pexels_api_keys"]:
+                delete_key = st.selectbox(
+                    tr("Select Pexels API Key to delete"), config.app["pexels_api_keys"], key="pexels_delete_key"
+                )
+                if st.button(tr("Delete Selected Pexels API Key")):
+                    config.app["pexels_api_keys"].remove(delete_key)
+                    config.save_config()
+                    st.success(tr("Pexels API Key deleted successfully"))
+
+        with col2:
+            st.subheader("Pixabay API Keys")
+
+            if config.app["pixabay_api_keys"]:
+                st.write(tr("Current Keys:"))
+                for key in config.app["pixabay_api_keys"]:
+                    st.code(key)
+            else:
+                st.info(tr("No Pixabay API Keys currently"))
+
+            new_key = st.text_input(tr("Add Pixabay API Key"), key="pixabay_new_key")
+            if st.button(tr("Add Pixabay API Key")):
+                if new_key and new_key not in config.app["pixabay_api_keys"]:
+                    config.app["pixabay_api_keys"].append(new_key)
+                    config.save_config()
+                    st.success(tr("Pixabay API Key added successfully"))
+                elif new_key in config.app["pixabay_api_keys"]:
+                    st.warning(tr("This API Key already exists"))
+                else:
+                    st.error(tr("Please enter a valid API Key"))
+
+            if config.app["pixabay_api_keys"]:
+                delete_key = st.selectbox(
+                    tr("Select Pixabay API Key to delete"), config.app["pixabay_api_keys"], key="pixabay_delete_key"
+                )
+                if st.button(tr("Delete Selected Pixabay API Key")):
+                    config.app["pixabay_api_keys"].remove(delete_key)
+                    config.save_config()
+                    st.success(tr("Pixabay API Key deleted successfully"))
 
 start_button = st.button(tr("Generate Video"), use_container_width=True, type="primary")
 if start_button:

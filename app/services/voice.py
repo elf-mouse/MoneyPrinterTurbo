@@ -11,6 +11,7 @@ from edge_tts import SubMaker, submaker
 from edge_tts.submaker import mktimestamp
 from loguru import logger
 from moviepy.video.tools import subtitles
+from moviepy.audio.io.AudioFileClip import AudioFileClip
 
 from app.config import config
 from app.utils import utils
@@ -39,6 +40,39 @@ def get_siliconflow_voices() -> list[str]:
     return [
         f"siliconflow:{model}:{voice}-{gender}"
         for model, voice, gender in voices_with_gender
+    ]
+
+
+def get_gemini_voices() -> list[str]:
+    """
+    获取Gemini TTS的声音列表
+    
+    Returns:
+        声音列表，格式为 ["gemini:Zephyr-Female", "gemini:Puck-Male", ...]
+    """
+    # Gemini TTS支持的语音列表
+    voices_with_gender = [
+        ("Zephyr", "Female"),
+        ("Puck", "Male"), 
+        ("Charon", "Male"),
+        ("Kore", "Female"),
+        ("Fenrir", "Male"),
+        ("Aoede", "Female"),
+        ("Thalia", "Female"),
+        ("Sage", "Male"),
+        ("Echo", "Female"),
+        ("Harmony", "Female"),
+        ("Lux", "Female"),
+        ("Nova", "Female"),
+        ("Vale", "Male"),
+        ("Orion", "Male"),
+        ("Atlas", "Male"),
+    ]
+    
+    # 添加gemini:前缀，并格式化为显示名称
+    return [
+        f"gemini:{voice}-{gender}"
+        for voice, gender in voices_with_gender
     ]
 
 
@@ -1077,6 +1111,11 @@ def is_siliconflow_voice(voice_name: str):
     return voice_name.startswith("siliconflow:")
 
 
+def is_gemini_voice(voice_name: str):
+    """检查是否是Gemini TTS的声音"""
+    return voice_name.startswith("gemini:")
+
+
 def tts(
     text: str,
     voice_name: str,
@@ -1102,6 +1141,18 @@ def tts(
             )
         else:
             logger.error(f"Invalid siliconflow voice name format: {voice_name}")
+            return None
+    elif is_gemini_voice(voice_name):
+        # 从voice_name中提取声音名称
+        # 格式: gemini:voice-Gender
+        parts = voice_name.split(":")
+        if len(parts) >= 2:
+            # 移除性别后缀，例如 "Zephyr-Female" -> "Zephyr"
+            voice_with_gender = parts[1]
+            voice = voice_with_gender.split("-")[0]
+            return gemini_tts(text, voice, voice_rate, voice_file, voice_volume)
+        else:
+            logger.error(f"Invalid gemini voice name format: {voice_name}")
             return None
     return azure_tts_v1(text, voice_name, voice_rate, voice_file)
 
@@ -1384,6 +1435,130 @@ def azure_tts_v2(text: str, voice_name: str, voice_file: str) -> Union[SubMaker,
     return None
 
 
+def gemini_tts(
+    text: str,
+    voice_name: str,
+    voice_rate: float,
+    voice_file: str,
+    voice_volume: float = 1.0,
+) -> Union[SubMaker, None]:
+    """
+    使用Google Gemini TTS生成语音
+    
+    Args:
+        text: 要转换的文本
+        voice_name: 语音名称，如 "Zephyr", "Puck" 等
+        voice_rate: 语音速率（当前未使用）
+        voice_file: 输出音频文件路径
+        voice_volume: 音频音量（当前未使用）
+        
+    Returns:
+        SubMaker对象或None
+    """
+    import base64
+    import json
+    import io
+    from pydub import AudioSegment
+    import google.generativeai as genai
+    
+    try:
+        # 配置Gemini API
+        api_key = config.app.get("gemini_api_key", "")
+        if not api_key:
+            logger.error("Gemini API key is not set")
+            return None
+            
+        genai.configure(api_key=api_key)
+        
+        logger.info(f"start, voice name: {voice_name}, try: 1")
+        
+        # 使用Gemini TTS API
+        model = genai.GenerativeModel("gemini-2.5-flash-preview-tts")
+        
+        generation_config = {
+            "response_modalities": ["AUDIO"],
+            "speech_config": {
+                "voice_config": {
+                    "prebuilt_voice_config": {
+                        "voice_name": voice_name
+                    }
+                }
+            }
+        }
+        
+        response = model.generate_content(
+            contents=text,
+            generation_config=generation_config
+        )
+        
+        # 检查响应
+        if not response.candidates or not response.candidates[0].content:
+            logger.error("No audio content received from Gemini TTS")
+            return None
+            
+        # 获取音频数据
+        audio_data = None
+        for part in response.candidates[0].content.parts:
+            if hasattr(part, 'inline_data') and part.inline_data:
+                audio_data = part.inline_data.data
+                break
+                
+        if not audio_data:
+            logger.error("No audio data found in response")
+            return None
+            
+        # 音频数据已经是原始字节，不需要base64解码
+        if isinstance(audio_data, str):
+            # 如果是字符串，则需要base64解码
+            audio_bytes = base64.b64decode(audio_data)
+        else:
+            # 如果已经是字节，直接使用
+            audio_bytes = audio_data
+        
+        # 尝试不同的音频格式 - Gemini可能返回不同的格式
+        audio_segment = None
+        
+        # Gemini返回Linear PCM格式，按照文档参数解析
+        try:
+            audio_segment = AudioSegment.from_file(
+                io.BytesIO(audio_bytes), 
+                format="raw",
+                frame_rate=24000,  # Gemini TTS默认采样率
+                channels=1,        # 单声道
+                sample_width=2     # 16-bit
+            )
+        except Exception as e:
+            logger.error(f"Failed to load PCM audio: {e}")
+            return None
+        
+        # 导出为MP3格式
+        audio_segment.export(voice_file, format="mp3")
+        
+        logger.info(f"completed, output file: {voice_file}")
+        
+        # 创建SubMaker对象用于字幕
+        sub_maker = SubMaker()
+        audio_duration = len(audio_segment) / 1000.0  # 转换为秒
+        
+        # 将音频长度转换为100纳秒单位（与edge_tts兼容）
+        audio_duration_100ns = int(audio_duration * 10000000)
+        
+        # 使用create_sub方法正确创建字幕项
+        sub_maker.create_sub(
+            (0, audio_duration_100ns), 
+            text
+        )
+        
+        return sub_maker
+        
+    except ImportError as e:
+        logger.error(f"Missing required package for Gemini TTS: {str(e)}. Please install: pip install pydub")
+        return None
+    except Exception as e:
+        logger.error(f"Gemini TTS failed, error: {str(e)}")
+        return None
+
+
 def _format_text(text: str) -> str:
     # text = text.replace("\n", " ")
     text = text.replace("[", " ")
@@ -1486,7 +1661,7 @@ def create_subtitle(sub_maker: submaker.SubMaker, text: str, subtitle_file: str)
         logger.error(f"failed, error: {str(e)}")
 
 
-def get_audio_duration(sub_maker: submaker.SubMaker):
+def _get_audio_duration_from_submaker(sub_maker: submaker.SubMaker):
     """
     获取音频时长
     """
@@ -1494,6 +1669,35 @@ def get_audio_duration(sub_maker: submaker.SubMaker):
         return 0.0
     return sub_maker.offset[-1][1] / 10000000
 
+def _get_audio_duration_from_mp3(mp3_file: str) -> float:
+    """
+    获取MP3音频时长
+    """
+    if not os.path.exists(mp3_file):
+        logger.error(f"MP3 file does not exist: {mp3_file}")
+        return 0.0
+
+    try:
+        # Use moviepy to get the duration of the MP3 file
+        with AudioFileClip(mp3_file) as audio:
+            return audio.duration  # Duration in seconds
+    except Exception as e:
+        logger.error(f"Failed to get audio duration from MP3: {str(e)}")
+        return 0.0
+
+def get_audio_duration( target: Union[str, submaker.SubMaker]) -> float:
+    """
+    获取音频时长
+    如果是SubMaker对象，则从SubMaker中获取时长
+    如果是MP3文件，则从MP3文件中获取时长
+    """
+    if isinstance(target, submaker.SubMaker):
+        return _get_audio_duration_from_submaker(target)
+    elif isinstance(target, str) and target.endswith(".mp3"):
+        return _get_audio_duration_from_mp3(target)
+    else:
+        logger.error(f"Invalid target type: {type(target)}")
+        return 0.0
 
 if __name__ == "__main__":
     voice_name = "zh-CN-XiaoxiaoMultilingualNeural-V2-Female"

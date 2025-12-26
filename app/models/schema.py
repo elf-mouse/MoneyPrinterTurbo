@@ -81,7 +81,8 @@ class VideoParams(BaseModel):
     video_materials: Optional[List[MaterialInfo]] = (
         None  # Materials used to generate the video
     )
-
+    
+    custom_audio_file: Optional[str] = None  # Custom audio file path, will ignore video_script and disable subtitle
     video_language: Optional[str] = ""  # auto detect
 
     voice_name: Optional[str] = ""
@@ -299,5 +300,35 @@ class BgmUploadResponse(BaseResponse):
                 "status": 200,
                 "message": "success",
                 "data": {"file": "/MoneyPrinterTurbo/resource/songs/example.mp3"},
+            },
+        }
+
+class VideoMaterialRetrieveResponse(BaseResponse):
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": 200,
+                "message": "success",
+                "data": {
+                    "files": [
+                        {
+                            "name": "example.mp4",
+                            "size": 12345678,
+                            "file": "/MoneyPrinterTurbo/resource/videos/example.mp4",
+                        }
+                    ]
+                },
+            },
+        }
+
+class VideoMaterialUploadResponse(BaseResponse):
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": 200,
+                "message": "success",
+                "data": {
+                    "file": "/MoneyPrinterTurbo/resource/videos/example.mp4",
+                },
             },
         }
